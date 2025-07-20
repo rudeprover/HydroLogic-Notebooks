@@ -1,5 +1,9 @@
 # 📚 Educational Notebook Series: Statistical & Machine Learning Methods in Hydrology
 
+![Hydrology Educational Series Banner](assets/A_banner_graphic_design_for_an_educational_series_.png)
+
+
+
 This repository provides a structured set of Jupyter Notebooks designed to teach **Python programming**, **statistics**, and **machine learning** within the context of **hydrology** and **environmental science**.
 
 ---
