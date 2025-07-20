@@ -1,6 +1,8 @@
 # 📚 Educational Notebook Series: Statistical & Machine Learning Methods in Hydrology
 
-![Hydrology Educational Series Banner](banner.png)
+<p align="center">
+  <img src="banner.png" alt="Hydrology Banner" width="300"/>
+</p>
 
 
 
