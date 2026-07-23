@@ -1,0 +1,270 @@
+# %% [markdown] {"id":"adiWweNSETMJ"}
+# # WaPOR v3 API Tutorial
+# 
+# `Download this notebook and run it in jupyter notebook which you might have already installed in your PC`
+# This is just a version of notebook I built upon the original one available [here](https://github.com/wateraccounting/WaPORMOOC/blob/main/1_WaPOR_download_colab/Download_WaPORv3_Data.ipynb). To clear any doubts regarding this notebook, You can contact me on my [linkedin](https://www.linkedin.com/in/zuhail/)
+
+# %% [markdown] {"id":"S7rvNtRnFx9o"}
+# ### 1. Downloading and Processing WaPOR v3 Data
+# 
+# In this notebook, we will:
+# 
+# - Explore the WaPOR v3 data catalog using the WaPOR API.
+# - Select the desired WaPOR variables (mapsets).
+# - Download raster files for a specified time period.
+# - Crop the rasters to the study area's boundary.
+# - Prepare the data for further analysis.
+# 
+# The example used here focuses on Actual Evapotranspiration and Interception (AETI) at dekadal (10-day) temporal resolution. 
+# 
+
+# %% [markdown]
+# #### 1.1 Installing and Downloading necessary libraries
+# 
+
+# %% [code] {"executionInfo":{"elapsed":296,"status":"ok","timestamp":1687794337485,"user":{"displayName":"Bert Coerver","userId":"04639365899663956346"},"user_tz":-120},"id":"u5uxD0QiQShv"}
+import ee
+import re
+import requests
+import numpy as np
+import matplotlib.pyplot as plt
+from osgeo import gdal
+
+# %% [markdown] {"id":"Y-Y7lJSmGRzb"}
+# The WaPOR v3 variables are stored in `mapsets`, which in turn contain `rasters` that contain the data for a particular date or period.
+# 
+# We can get an overview of the available `mapsets` by requesting the following url (note that you can also open this url in your browser):
+
+# %% [code] {"id":"80CinsyZidou"}
+base_url = f"https://data.apps.fao.org/gismgr/api/v2/catalog/workspaces/WAPOR-3/mapsets"
+
+# %% [markdown] {"id":"_gmaUHQ3iYIH","jp-MarkdownHeadingCollapsed":true}
+# #### 1.2 Exploring the WaPOR Data Catalog
+# 
+# WaPOR organizes its datasets into *mapsets*. Each mapset corresponds to a particular variable, spatial resolution, and temporal resolution.
+# 
+# Examples include:
+# 
+# - L1-AETI-D : Actual Evapotranspiration and Interception (Dekadal)
+# - L1-E-D : Evaporation (Dekadal)
+# - L1-PCP-M : Monthly Precipitation
+# - L2-AETI-M : Monthly Actual ET at 100 m resolution
+# 
+# We first query the WaPOR API to obtain a list of all available mapsets using a helper function (described later, don't worry)
+
+# %% [code] {"executionInfo":{"elapsed":277,"status":"ok","timestamp":1687790756151,"user":{"displayName":"Bert Coerver","userId":"04639365899663956346"},"user_tz":-120},"id":"CwwxvIZdIiHQ","outputId":"f6f9020e-1587-4b02-8db1-9a11671bab95","scrolled":true}
+all_mapsets = collect_responses(base_url, info = ["code", "caption"])
+
+all_mapsets
+
+# %% [markdown]
+# The variable `all_mapsets` now contains a list with all the available mapset codes and a accompanying description.
+
+# %% [markdown]
+# #### 1.3 Retrieving API Responses
+# 
+# The WaPOR API returns data in JSON format and uses pagination when a large number of records are available.
+# 
+# The helper function(collect_responses) below:
+# 
+# - Sends an HTTP GET request to the API.
+# - Handles paginated responses automatically.
+# - Extracts only the required information (e.g., mapset codes or download URLs).
+# - Returns the results as a Python list.
+
+# %% [code]
+def collect_responses(url, info = ["code"]):
+    data = {"links": [{"rel": "next", "href": url}]}  
+    output = list()
+    while "next" in [x["rel"] for x in data["links"]]:    #comparison benig made is "next" in [next]
+        url_ = [x["href"] for x in data["links"] if x["rel"] == "next"][0]
+        response = requests.get(url_)
+        response.raise_for_status()
+        data = response.json()["response"]
+        if isinstance(info, list):
+            output += [tuple(x.get(y) for y in info) for x in data["items"]]
+        else:
+            output += data["items"]
+    if isinstance(info, list):
+        output = sorted(output)
+    return output
+
+# %% [markdown] {"id":"xx6SLaJBJA0l"}
+# Then we run the function on the url we defined above.
+
+# %% [markdown]
+# #### 1.4 Selecting Variables for Download
+# 
+# After obtaining the list of available mapsets, we can select one or more variables of interest.
+# 
+# For each selected mapset, the API provides:
+# 
+# - Raster names
+# - Acquisition dates
+# - Direct download URLs
+# 
+# These download URLs point directly to the GeoTIFF files hosted by FAO.
+
+# %% [markdown] {"id":"nR28AIIfJVpE"}
+# 
+# we can choose one or more of the codes, add it to the `mapset_codes` list in the cell below and get download links for each image.
+
+# %% [code]
+mapset_codes = ["L1-AETI-D","L1-E-D"]
+all_rasters = []
+for mapset_code in mapset_codes:
+    mapset_url  = f"{base_url}/{mapset_code}/rasters"
+    all_rasters.append(collect_responses(mapset_url, info = ["code", "downloadUrl"]))
+
+
+# %% [code]
+len(all_rasters)
+
+# %% [code]
+for k,i in enumerate(all_rasters[0]):
+    if int(k)<2:
+        print(f"the image {i[0]} is available at :  {i[1]} url\n")
+    else:
+        break
+
+# %% [markdown]
+# up until now we wrote code to get a url for the mapsets of our interest now then we will use the pattern of url for images within each mapset(AETI, or ET etc) and fetch the raster files, remember that raster fi
+
+# %% [markdown] {"jp-MarkdownHeadingCollapsed":true}
+# #### 1.5 Downloading Raster Files
+# 
+# The following section downloads all raster files corresponding to the selected variable and time period.
+# 
+# The workflow is:
+# 
+# 1. Construct the filename from the year, month, and dekad.
+# 2. Generate the complete download URL.
+# 3. Check whether the file has already been downloaded.
+# 4. Download and save the GeoTIFF file locally.
+# 
+# Downloaded rasters are stored in the `WaPOR/` directory.
+
+# %% [code]
+import os
+import requests
+import pandas as pd
+
+
+
+months = pd.date_range("2020-04-01", "2020-04-30", freq="MS")
+
+os.makedirs("WaPOR", exist_ok=True)
+
+for mapset_code in mapset_codes: 
+    
+    base_url = (f"https://storage.googleapis.com/fao-gismgr-wapor-3-data/DATA/WAPOR-3/MAPSET/{mapset_code}/")
+    
+    for month in months:
+        y_m = month.strftime("%Y-%m")
+
+        for dekad in ["D1", "D2", "D3"]:
+    
+            filename = f"WAPOR-3.{mapset_code}.{y_m}-{dekad}.tif"
+            url = base_url + filename
+    
+            print(f"Downloading {filename}")
+    
+            r = requests.get(url)
+    
+            if r.status_code == 200:
+                with open(os.path.join("WaPOR", filename), "wb") as f:
+                    f.write(r.content)
+            else:
+                print(f"Failed: {url}")
+
+
+# %% [markdown] {"id":"xlOa5LrXMECW"}
+# ### 2. Cropping the Raster Data
+# 
+# The downloaded WaPOR rasters cover large geographical regions. For most analyses, only the study area is required.
+# 
+# Using a GeoJSON boundary file, we will:
+# 
+# - Load the Area of Interest (AOI).
+# - Reproject the AOI if necessary to match the raster's coordinate reference system (CRS).
+# - Crop each raster to the AOI.
+# - Save the cropped rasters in a separate output directory.
+# 
+# The cropped rasters are stored in the `WaPOR_cropped/` directory.
+
+# %% [code] {"scrolled":true}
+import rasterio
+import os
+import glob
+
+import geopandas as gpd
+import rasterio
+from rasterio.mask import mask
+
+# Folder containing downloaded TIFFs
+input_folder = "WaPOR"
+
+# Folder to save cropped TIFFs
+output_folder = "WaPOR_cropped"
+os.makedirs(output_folder, exist_ok=True)
+
+# Path to your GeoJSON file
+geojson_path = "Wad_Helal.geojson"
+
+# Read the GeoJSON
+gdf = gpd.read_file(geojson_path)
+
+# Get the geometries
+geometries = gdf.geometry.values
+
+
+# Loop over all TIFF files
+for tif_file in glob.glob(os.path.join(input_folder, "*.tif")):
+
+    output_path = os.path.join(output_folder, os.path.basename(tif_file))
+
+    if os.path.exists(output_path):
+        print(f"{os.path.basename(tif_file)} already is cropped. Skipping.")
+        continue
+        
+    else:
+        
+        print(f"Cropping: {os.path.basename(tif_file)}")
+    
+        with rasterio.open(tif_file) as src:
+    
+            # Reproject GeoJSON if CRS is different
+            if gdf.crs != src.crs:
+                gdf_proj = gdf.to_crs(src.crs)
+                geometries = gdf_proj.geometry.values
+    
+            # Crop the raster
+            out_image, out_transform = mask(
+                src,
+                geometries,
+                crop=True
+            )
+    
+            # Copy metadata
+            out_meta = src.meta.copy()
+    
+            out_meta.update(
+                {
+                    "driver": "GTiff",
+                    "height": out_image.shape[1],
+                    "width": out_image.shape[2],
+                    "transform": out_transform,
+                }
+            )
+    
+            # Output filename
+            output_path = os.path.join(
+                output_folder,
+                os.path.basename(tif_file)
+            )
+    
+            # Save cropped raster
+            with rasterio.open(output_path, "w", **out_meta) as dest:
+                dest.write(out_image)
+
+print("All files cropped successfully.")
