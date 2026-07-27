@@ -28,8 +28,7 @@ This repository provides a structured set of Jupyter Notebooks designed to teach
 
 ## 🧑‍🔬 Contributors
 
-- **Zuhail Abdullah** – Resource Person (Jr.)  
-- **Dr. Harsh Upadhyay** – Scientist-B  
+- **Zuhail Abdullah** – Junior Research Fellow@HID, NIH  
 
 📍 **Affiliation**: National Institute of Hydrology, Roorkee, India
 
